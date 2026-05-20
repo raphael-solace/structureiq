@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>StructureIQ | Structured Product Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <div class="header-left">
+      <svg class="solace-logo" viewBox="0 0 200 28" width="200" height="28">
+        <text x="0" y="20" font-family="-apple-system, sans-serif" font-size="16" font-weight="700" fill="#00c895">Solace</text>
+        <text x="58" y="20" font-family="-apple-system, sans-serif" font-size="16" font-weight="300" fill="#e8ecf4">| Agent Mesh</text>
+      </svg>
+      <span class="product-name">StructureIQ</span>
+    </div>
+    <div class="header-right">
+      <div id="conn-status" class="conn-indicator disconnected" title="Not configured"></div>
+      <button id="settings-btn" class="settings-btn" title="LLM Settings">&#9881;</button>
+      <span class="env-badge">DEMO</span>
+      <span class="mesh-badge">Enterprise Orchestration</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel panel-left">
+      <h2>Client Brief</h2>
+      <textarea id="prompt-input" placeholder="Describe the client's structured product need in natural language..."></textarea>
+      <div class="example-prompts">
+        <button class="example-btn" data-prompt="Conservative client, €500k, wants capital protection on Euro Stoxx 50, 3 year tenor">Conservative | €500k CPN</button>
+        <button class="example-btn" data-prompt="Aggressive client, $1M, autocall on single stock basket (NVDA, TSLA, AMZN), 18 months, willing to accept 60% barrier">Aggressive | $1M Autocall</button>
+        <button class="example-btn" data-prompt="Pension fund, £2M, needs yield enhancement on low volatility underlying (FTSE 100), 5 year tenor, institutional grade">Pension Fund | £2M Yield</button>
+      </div>
+      <button id="generate-btn" class="generate-btn">
+        <span class="btn-icon">&#9654;</span> Generate Structure
+      </button>
+
+      <div class="discovery-output" id="discovery-output">
+        <h3>Extracted Parameters</h3>
+        <div class="params-grid" id="params-grid"></div>
+      </div>
+    </section>
+
+    <section class="panel panel-center">
+      <h2>Agent Mesh</h2>
+      <div class="mesh-viz" id="mesh-viz">
+        <svg viewBox="0 0 400 320" id="mesh-svg">
+          <defs>
+            <linearGradient id="flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" style="stop-color:#00c895;stop-opacity:0"/>
+              <stop offset="50%" style="stop-color:#00c895;stop-opacity:1"/>
+              <stop offset="100%" style="stop-color:#00c895;stop-opacity:0"/>
+            </linearGradient>
+          </defs>
+          <!-- Connection lines -->
+          <line class="conn" id="conn-orch-disc" x1="200" y1="80" x2="80" y2="180"/>
+          <line class="conn" id="conn-orch-struct" x1="200" y1="80" x2="200" y2="200"/>
+          <line class="conn" id="conn-orch-doc" x1="200" y1="80" x2="320" y2="180"/>
+          <line class="conn" id="conn-disc-struct" x1="80" y1="180" x2="200" y2="200"/>
+          <line class="conn" id="conn-struct-doc" x1="200" y1="200" x2="320" y2="180"/>
+
+          <!-- Flow pulses -->
+          <circle class="flow-pulse" id="pulse-disc" r="4" cx="200" cy="80"/>
+          <circle class="flow-pulse" id="pulse-struct" r="4" cx="200" cy="80"/>
+          <circle class="flow-pulse" id="pulse-doc" r="4" cx="200" cy="80"/>
+
+          <!-- Agent nodes -->
+          <g class="node" id="node-orchestrator" transform="translate(200,60)">
+            <circle r="28" class="node-circle orch"/>
+            <text class="node-label" dy="4">ORCH</text>
+          </g>
+          <g class="node" id="node-discovery" transform="translate(80,190)">
+            <circle r="24" class="node-circle disc"/>
+            <text class="node-label" dy="4">DISC</text>
+          </g>
+          <g class="node" id="node-structuring" transform="translate(200,220)">
+            <circle r="24" class="node-circle struct"/>
+            <text class="node-label" dy="4">STRUCT</text>
+          </g>
+          <g class="node" id="node-document" transform="translate(320,190)">
+            <circle r="24" class="node-circle doc"/>
+            <text class="node-label" dy="4">DOC</text>
+          </g>
+
+          <!-- Status badges -->
+          <text class="status-badge" id="status-orch" x="200" y="100">Idle</text>
+          <text class="status-badge" id="status-disc" x="80" y="225">Idle</text>
+          <text class="status-badge" id="status-struct" x="200" y="255">Idle</text>
+          <text class="status-badge" id="status-doc" x="320" y="225">Idle</text>
+        </svg>
+      </div>
+
+      <div class="event-log" id="event-log">
+        <h3>Audit Trail</h3>
+        <div class="log-entries" id="log-entries">
+          <div class="log-entry idle">[System] Awaiting client brief...</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel panel-right">
+      <h2>Output Artifacts</h2>
+      <div class="output-tabs">
+        <button class="tab-btn active" data-tab="termsheet">Term Sheet</button>
+        <button class="tab-btn" data-tab="suitability">Suitability</button>
+        <button class="tab-btn" data-tab="epricer">E-Pricer XML</button>
+      </div>
+      <div class="tab-content" id="tab-termsheet">
+        <div class="placeholder">Awaiting document generation...</div>
+      </div>
+      <div class="tab-content hidden" id="tab-suitability">
+        <div class="placeholder">Awaiting document generation...</div>
+      </div>
+      <div class="tab-content hidden" id="tab-epricer">
+        <div class="placeholder">Awaiting document generation...</div>
+      </div>
+
+      <div class="governance-badges" id="governance-badges">
+        <div class="gov-badge" id="badge-local"><span class="badge-icon">&#128274;</span> Data stayed local. API key server-side only.</div>
+        <div class="gov-badge" id="badge-rules"><span class="badge-icon">&#9744;</span> Business rules pending</div>
+        <div class="gov-badge" id="badge-schema"><span class="badge-icon">&#9744;</span> Output schema pending</div>
+        <div class="gov-badge" id="badge-audit"><span class="badge-icon">&#128220;</span> Full audit trail available</div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span class="footer-brand">
+      <svg viewBox="0 0 20 20" width="16" height="16" style="vertical-align: middle; margin-right: 6px;">
+        <circle cx="10" cy="10" r="8" fill="none" stroke="#00c895" stroke-width="2"/>
+        <circle cx="10" cy="10" r="3" fill="#00c895"/>
+      </svg>
+      Powered by <strong>Solace Agent Mesh</strong>
+    </span>
+    <span class="footer-sep">|</span>
+    <span>Event-Driven AI Orchestration</span>
+    <span class="footer-sep">|</span>
+    <span class="footer-link">solace.com</span>
+  </footer>
+
+  <div id="settings-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>LLM Configuration</h3>
+      <p class="modal-desc">Connect to an OpenAI-compatible endpoint (LiteLLM, vLLM, etc.)</p>
+      <label>API Endpoint</label>
+      <input type="text" id="cfg-endpoint" placeholder="https://your-litellm-proxy.com/v1">
+      <label>API Key</label>
+      <input type="password" id="cfg-apikey" placeholder="sk-...">
+      <label>Model</label>
+      <input type="text" id="cfg-model" placeholder="anthropic/claude-sonnet-4-20250514">
+      <div class="modal-actions">
+        <button id="settings-close" class="btn-secondary">Cancel</button>
+        <button id="settings-save" class="btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
