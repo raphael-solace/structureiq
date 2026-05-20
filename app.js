@@ -1,14 +1,19 @@
 const promptInput = document.getElementById("prompt-input");
 const generateBtn = document.getElementById("generate-btn");
-const logEntries = document.getElementById("log-entries");
 const paramsGrid = document.getElementById("params-grid");
 const discoveryOutput = document.getElementById("discovery-output");
+const topicTrail = document.getElementById("topic-trail");
 const settingsBtn = document.getElementById("settings-btn");
 const settingsModal = document.getElementById("settings-modal");
 const settingsSave = document.getElementById("settings-save");
 const settingsClose = document.getElementById("settings-close");
 
 let isRunning = false;
+let sessionId = null;
+
+function newSession() {
+  return Math.random().toString(36).slice(2, 10);
+}
 
 function getConfig() {
   return {
@@ -68,59 +73,21 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
 
 generateBtn.addEventListener("click", runWorkflow);
 
-function log(message, type = "") {
-  const ts = new Date().toLocaleTimeString("en-GB", { hour12: false });
+function emitTopic(topic, payload, type = "pub") {
+  const ts = new Date().toLocaleTimeString("en-GB", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const entry = document.createElement("div");
-  entry.className = `log-entry ${type}`;
-  entry.textContent = `[${ts}] ${message}`;
-  logEntries.prepend(entry);
-}
+  entry.className = `trail-entry ${type}`;
 
-function setNodeStatus(node, status) {
-  const nodeToId = { orchestrator: "orch", discovery: "disc", structuring: "struct", document: "doc" };
-  const circle = document.querySelector(`#node-${node} .node-circle`);
-  const badgeEl = document.getElementById(`status-${nodeToId[node]}`);
+  const dirLabel = type === "tool" ? "TOOL" : type === "deny" ? "DENY" : type === "sub" ? "SUB" : "PUB";
 
-  circle.classList.remove("processing", "complete", "blocked");
-  badgeEl.classList.remove("processing", "complete", "blocked");
+  entry.innerHTML = `
+    <span class="trail-ts">${ts}</span>
+    <span class="trail-topic"><span class="trail-direction ${type}">${dirLabel}</span>${topic}</span>
+    <span class="trail-payload">${payload}</span>
+  `;
 
-  if (status !== "idle") {
-    circle.classList.add(status);
-    badgeEl.classList.add(status);
-  }
-
-  const labels = { idle: "Idle", processing: "Processing", complete: "Complete", blocked: "Blocked" };
-  badgeEl.textContent = labels[status] || "Idle";
-}
-
-function activateConnection(id) {
-  const el = document.getElementById(id);
-  if (el) el.classList.add("active");
-}
-
-function resetConnections() {
-  document.querySelectorAll(".conn").forEach((c) => c.classList.remove("active"));
-}
-
-function animatePulse(id, fromX, fromY, toX, toY) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.setAttribute("cx", fromX);
-  el.setAttribute("cy", fromY);
-  el.classList.add("animating");
-
-  const duration = 600;
-  const start = performance.now();
-
-  function step(now) {
-    const t = Math.min((now - start) / duration, 1);
-    const ease = t * (2 - t);
-    el.setAttribute("cx", fromX + (toX - fromX) * ease);
-    el.setAttribute("cy", fromY + (toY - fromY) * ease);
-    if (t < 1) requestAnimationFrame(step);
-    else el.classList.remove("animating");
-  }
-  requestAnimationFrame(step);
+  topicTrail.appendChild(entry);
+  topicTrail.scrollTop = topicTrail.scrollHeight;
 }
 
 function renderParams(data) {
@@ -196,8 +163,6 @@ function updateGovernanceBadge(id, passed) {
 }
 
 function resetUI() {
-  resetConnections();
-  ["orchestrator", "discovery", "structuring", "document"].forEach((n) => setNodeStatus(n, "idle"));
   discoveryOutput.classList.remove("visible");
   paramsGrid.innerHTML = "";
   document.getElementById("tab-termsheet").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
@@ -207,7 +172,7 @@ function resetUI() {
   document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">&#9744;</span> Output schema pending';
   document.getElementById("badge-rules").classList.remove("passed", "failed");
   document.getElementById("badge-schema").classList.remove("passed", "failed");
-  logEntries.innerHTML = "";
+  topicTrail.innerHTML = "";
 }
 
 async function callLLM(systemPrompt, userMessage) {
@@ -332,67 +297,119 @@ async function runWorkflow() {
   }
 
   isRunning = true;
+  sessionId = newSession();
   generateBtn.disabled = true;
   generateBtn.classList.add("loading");
   generateBtn.innerHTML = '<span class="btn-icon">&#8635;</span> Processing...';
 
   resetUI();
-  log("Request received. Routing to Discovery Agent.", "orch");
-  setNodeStatus("orchestrator", "processing");
+
+  emitTopic(
+    `sam/v1/request/orchestrator/${sessionId}`,
+    `User brief received. Routing to discovery agent.`,
+    "pub"
+  );
 
   try {
     await delay(300);
-    activateConnection("conn-orch-disc");
-    animatePulse("pulse-disc", 200, 60, 80, 190);
-    setNodeStatus("discovery", "processing");
-    log("Extracting parameters from client brief...", "disc");
+
+    emitTopic(
+      `sam/v1/request/discovery/${sessionId}`,
+      `Orchestrator delegates: extract parameters from client brief`,
+      "pub"
+    );
+
+    emitTopic(
+      `sam/v1/tool/discovery/nlp_extraction/${sessionId}`,
+      `Tool call: parse_client_brief(text="${prompt.slice(0, 50)}...")`,
+      "tool"
+    );
 
     const discoveryResult = await callLLM(DISCOVERY_SYSTEM, prompt);
 
-    setNodeStatus("discovery", "complete");
-    log("Parameters extracted successfully", "disc");
+    emitTopic(
+      `sam/v1/response/discovery/${sessionId}`,
+      `Parameters extracted: ${discoveryResult.underlying}, ${discoveryResult.tenor}, ${discoveryResult.riskProfile}`,
+      "pub"
+    );
+
     renderParams(discoveryResult);
 
+    emitTopic(
+      `sam/v1/acl/deny/discovery/${sessionId}`,
+      `ACL BLOCK: discovery cannot publish to sam/v1/request/document/>`,
+      "deny"
+    );
+
     await delay(400);
-    activateConnection("conn-disc-struct");
-    activateConnection("conn-orch-struct");
-    animatePulse("pulse-struct", 80, 190, 200, 220);
-    setNodeStatus("structuring", "processing");
-    setNodeStatus("orchestrator", "processing");
-    log("Running business rule validation...", "struct");
+
+    emitTopic(
+      `sam/v1/request/structuring/${sessionId}`,
+      `Orchestrator delegates: select product and validate business rules`,
+      "pub"
+    );
+
+    emitTopic(
+      `sam/v1/tool/structuring/rule_engine/${sessionId}`,
+      `Tool call: validate_business_rules(profile=${discoveryResult.riskProfile}, notional=${discoveryResult.notional})`,
+      "tool"
+    );
 
     const structUserMsg = `Client parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nSelect the optimal product structure and validate all 3 business rules.`;
     const structuringResult = await callLLM(STRUCTURING_SYSTEM, structUserMsg);
 
     const allRulesPassed = structuringResult.rules && structuringResult.rules.every((r) => r.passed);
 
+    emitTopic(
+      `sam/v1/response/structuring/${sessionId}`,
+      `Product: ${structuringResult.productType} | Rules: ${allRulesPassed ? "ALL PASSED" : "VIOLATIONS DETECTED"}`,
+      "pub"
+    );
+
     if (allRulesPassed) {
-      setNodeStatus("structuring", "complete");
-      log(`Product selected: ${structuringResult.productType}. All rules passed.`, "struct");
       updateGovernanceBadge("badge-rules", true);
       document.getElementById("badge-rules").innerHTML = `<span class="badge-icon">✅</span> ${structuringResult.rules.length}/${structuringResult.rules.length} business rules passed`;
     } else {
-      setNodeStatus("structuring", "blocked");
       const failedRules = structuringResult.rules.filter((r) => !r.passed);
-      log(`BLOCKED: ${failedRules.length} business rule(s) failed`, "error");
-      failedRules.forEach((r) => log(`  ✘ ${r.name}: ${r.reason}`, "error"));
+      failedRules.forEach((r) => {
+        emitTopic(
+          `sam/v1/governance/violation/${sessionId}`,
+          `Rule failed: ${r.name} - ${r.reason}`,
+          "error"
+        );
+      });
       updateGovernanceBadge("badge-rules", false);
       document.getElementById("badge-rules").innerHTML = `<span class="badge-icon">❌</span> ${structuringResult.rules.filter((r) => r.passed).length}/${structuringResult.rules.length} business rules passed`;
     }
 
     await delay(400);
-    activateConnection("conn-struct-doc");
-    activateConnection("conn-orch-doc");
-    animatePulse("pulse-doc", 200, 220, 320, 190);
-    setNodeStatus("document", "processing");
-    log("Generating 3 artifacts in parallel...", "doc");
+
+    emitTopic(
+      `sam/v1/request/document/${sessionId}`,
+      `Orchestrator delegates: generate term sheet, suitability, e-pricer XML`,
+      "pub"
+    );
+
+    emitTopic(
+      `sam/v1/tool/document/term_sheet_gen/${sessionId}`,
+      `Tool call: generate_term_sheet(product=${structuringResult.productType})`,
+      "tool"
+    );
+
+    emitTopic(
+      `sam/v1/tool/document/xml_builder/${sessionId}`,
+      `Tool call: build_epricer_payload(isin=XS...)`,
+      "tool"
+    );
 
     const docUserMsg = `Generate all three document artifacts for this validated structured product.\n\nDiscovery Parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nStructuring Result:\n${JSON.stringify(structuringResult, null, 2)}`;
     const documentResult = await callLLM(DOCUMENT_SYSTEM, docUserMsg);
 
-    setNodeStatus("document", "complete");
-    setNodeStatus("orchestrator", "complete");
-    log("All artifacts generated. Workflow complete.", "success");
+    emitTopic(
+      `sam/v1/response/document/${sessionId}`,
+      `Artifacts generated: term_sheet, suitability_statement, epricer_xml`,
+      "pub"
+    );
 
     renderTermSheet(documentResult.termSheet);
     renderSuitability(documentResult.suitabilityStatement);
@@ -401,10 +418,24 @@ async function runWorkflow() {
     updateGovernanceBadge("badge-schema", true);
     document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> Output schema validated before write-back';
 
-    log(`Total artifacts: Term Sheet, Suitability Statement, E-Pricer XML`, "orch");
+    emitTopic(
+      `sam/v1/response/orchestrator/${sessionId}`,
+      `Workflow complete. 3 artifacts delivered to client namespace.`,
+      "pub"
+    );
+
+    emitTopic(
+      `sam/v1/audit/replay/${sessionId}`,
+      `Full topic replay available for session ${sessionId} (${topicTrail.children.length} events)`,
+      "sub"
+    );
+
   } catch (err) {
-    log(`ERROR: ${err.message}`, "error");
-    setNodeStatus("orchestrator", "blocked");
+    emitTopic(
+      `sam/v1/error/orchestrator/${sessionId}`,
+      `ERROR: ${err.message}`,
+      "error"
+    );
   } finally {
     isRunning = false;
     generateBtn.disabled = false;

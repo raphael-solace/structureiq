@@ -18,8 +18,8 @@
     <div class="header-right">
       <div id="conn-status" class="conn-indicator disconnected" title="Not configured"></div>
       <button id="settings-btn" class="settings-btn" title="LLM Settings">&#9881;</button>
-      <span class="env-badge">DEMO</span>
-      <span class="mesh-badge">Enterprise Orchestration</span>
+      <span class="env-badge">AIRGAPPED</span>
+      <span class="mesh-badge">Topic-Based Security</span>
     </div>
   </header>
 
@@ -43,59 +43,58 @@
     </section>
 
     <section class="panel panel-center">
-      <h2>Agent Mesh</h2>
-      <div class="mesh-viz" id="mesh-viz">
-        <svg viewBox="0 0 400 320" id="mesh-svg">
-          <defs>
-            <linearGradient id="flow-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" style="stop-color:#00c895;stop-opacity:0"/>
-              <stop offset="50%" style="stop-color:#00c895;stop-opacity:1"/>
-              <stop offset="100%" style="stop-color:#00c895;stop-opacity:0"/>
-            </linearGradient>
-          </defs>
-          <!-- Connection lines -->
-          <line class="conn" id="conn-orch-disc" x1="200" y1="80" x2="80" y2="180"/>
-          <line class="conn" id="conn-orch-struct" x1="200" y1="80" x2="200" y2="200"/>
-          <line class="conn" id="conn-orch-doc" x1="200" y1="80" x2="320" y2="180"/>
-          <line class="conn" id="conn-disc-struct" x1="80" y1="180" x2="200" y2="200"/>
-          <line class="conn" id="conn-struct-doc" x1="200" y1="200" x2="320" y2="180"/>
+      <div class="center-top">
+        <h2>Event Mesh Audit Trail</h2>
+        <div class="airgap-badge">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 1a4 4 0 0 0-4 4v3H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1V5a4 4 0 0 0-4-4zm-2 4a2 2 0 1 1 4 0v3H6V5z" fill="currentColor"/></svg>
+          Airgapped Namespace
+        </div>
+      </div>
+      <p class="trail-desc">Every agent interaction publishes to a governed Solace topic. ACLs enforce who can publish/subscribe. Full audit via topic replay.</p>
 
-          <!-- Flow pulses -->
-          <circle class="flow-pulse" id="pulse-disc" r="4" cx="200" cy="80"/>
-          <circle class="flow-pulse" id="pulse-struct" r="4" cx="200" cy="80"/>
-          <circle class="flow-pulse" id="pulse-doc" r="4" cx="200" cy="80"/>
-
-          <!-- Agent nodes -->
-          <g class="node" id="node-orchestrator" transform="translate(200,60)">
-            <circle r="28" class="node-circle orch"/>
-            <text class="node-label" dy="4">ORCH</text>
-          </g>
-          <g class="node" id="node-discovery" transform="translate(80,190)">
-            <circle r="24" class="node-circle disc"/>
-            <text class="node-label" dy="4">DISC</text>
-          </g>
-          <g class="node" id="node-structuring" transform="translate(200,220)">
-            <circle r="24" class="node-circle struct"/>
-            <text class="node-label" dy="4">STRUCT</text>
-          </g>
-          <g class="node" id="node-document" transform="translate(320,190)">
-            <circle r="24" class="node-circle doc"/>
-            <text class="node-label" dy="4">DOC</text>
-          </g>
-
-          <!-- Status badges -->
-          <text class="status-badge" id="status-orch" x="200" y="100">Idle</text>
-          <text class="status-badge" id="status-disc" x="80" y="225">Idle</text>
-          <text class="status-badge" id="status-struct" x="200" y="255">Idle</text>
-          <text class="status-badge" id="status-doc" x="320" y="225">Idle</text>
-        </svg>
+      <div class="topic-trail" id="topic-trail">
+        <div class="trail-entry idle">
+          <span class="trail-ts">--:--:--</span>
+          <span class="trail-topic">solace/agent-mesh/v1/status</span>
+          <span class="trail-payload">Awaiting request...</span>
+        </div>
       </div>
 
-      <div class="event-log" id="event-log">
-        <h3>Audit Trail</h3>
-        <div class="log-entries" id="log-entries">
-          <div class="log-entry idle">[System] Awaiting client brief...</div>
+      <div class="acl-panel">
+        <h3>Topic ACL Policy (Enforced)</h3>
+        <div class="acl-grid">
+          <div class="acl-row header">
+            <span>Agent</span>
+            <span>Publish</span>
+            <span>Subscribe</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Orchestrator</span>
+            <span class="acl-topic">sam/v1/request/&gt;</span>
+            <span class="acl-topic">sam/v1/response/&gt;</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Discovery</span>
+            <span class="acl-topic">sam/v1/response/discovery/&gt;</span>
+            <span class="acl-topic">sam/v1/request/discovery/&gt;</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Structuring</span>
+            <span class="acl-topic">sam/v1/response/structuring/&gt;</span>
+            <span class="acl-topic">sam/v1/request/structuring/&gt;</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Document</span>
+            <span class="acl-topic">sam/v1/response/document/&gt;</span>
+            <span class="acl-topic">sam/v1/request/document/&gt;</span>
+          </div>
+          <div class="acl-row denied">
+            <span class="acl-agent">Discovery</span>
+            <span class="acl-deny">DENY sam/v1/request/document/&gt;</span>
+            <span class="acl-deny">DENY sam/v1/response/structuring/&gt;</span>
+          </div>
         </div>
+        <p class="acl-note">Agents cannot cross-communicate outside their ACL scope. Topic isolation = airgapped by design.</p>
       </div>
     </section>
 
@@ -117,10 +116,10 @@
       </div>
 
       <div class="governance-badges" id="governance-badges">
-        <div class="gov-badge" id="badge-local"><span class="badge-icon">&#128274;</span> Data stayed local. API key server-side only.</div>
+        <div class="gov-badge" id="badge-airgap"><span class="badge-icon">&#128274;</span> Airgapped namespace. No cross-agent data leakage.</div>
         <div class="gov-badge" id="badge-rules"><span class="badge-icon">&#9744;</span> Business rules pending</div>
         <div class="gov-badge" id="badge-schema"><span class="badge-icon">&#9744;</span> Output schema pending</div>
-        <div class="gov-badge" id="badge-audit"><span class="badge-icon">&#128220;</span> Full audit trail available</div>
+        <div class="gov-badge" id="badge-audit"><span class="badge-icon">&#128220;</span> Topic-level replay available for full audit</div>
       </div>
     </section>
   </main>
@@ -134,7 +133,7 @@
       Powered by <strong>Solace Agent Mesh</strong>
     </span>
     <span class="footer-sep">|</span>
-    <span>Event-Driven AI Orchestration</span>
+    <span>Topic-Based Security | Event-Driven AI Orchestration</span>
     <span class="footer-sep">|</span>
     <span class="footer-link">solace.com</span>
   </footer>
