@@ -15,6 +15,12 @@ function newSession() {
   return Math.random().toString(36).slice(2, 10);
 }
 
+function generateProductRef() {
+  const year = new Date().getFullYear();
+  const seq = String(Math.floor(Math.random() * 99999)).padStart(5, "0");
+  return `SIQ-${year}-${seq}`;
+}
+
 function getConfig() {
   return {
     endpoint: localStorage.getItem("siq_endpoint") || "",
@@ -165,6 +171,14 @@ function updateGovernanceBadge(id, passed) {
 function resetUI() {
   discoveryOutput.classList.remove("visible");
   paramsGrid.innerHTML = "";
+  document.getElementById("product-ref").textContent = "";
+  document.getElementById("instrument-header").style.display = "none";
+  document.getElementById("instrument-ref").textContent = "";
+  document.getElementById("instrument-name").textContent = "";
+  document.getElementById("status-risk").textContent = "PENDING";
+  document.getElementById("status-risk").className = "status-badge";
+  document.getElementById("status-approval").textContent = "PENDING";
+  document.getElementById("status-approval").className = "status-badge";
   document.getElementById("tab-termsheet").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
   document.getElementById("tab-suitability").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
   document.getElementById("tab-epricer").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
@@ -304,6 +318,10 @@ async function runWorkflow() {
 
   resetUI();
 
+  const refNumber = generateProductRef();
+  document.getElementById("product-ref").textContent = refNumber;
+  document.getElementById("instrument-ref").textContent = refNumber;
+
   emitTopic(
     `sam/v1/request/orchestrator/${sessionId}`,
     `User brief received. Routing to discovery agent.`,
@@ -366,6 +384,11 @@ async function runWorkflow() {
       "pub"
     );
 
+    document.getElementById("instrument-header").style.display = "block";
+    document.getElementById("instrument-name").textContent = structuringResult.productType;
+    document.getElementById("status-risk").textContent = allRulesPassed ? "RISK ASSESSED" : "RISK FLAG";
+    document.getElementById("status-risk").className = "status-badge " + (allRulesPassed ? "assessed" : "rejected");
+
     if (allRulesPassed) {
       updateGovernanceBadge("badge-rules", true);
       document.getElementById("badge-rules").innerHTML = `<span class="badge-icon">✅</span> ${structuringResult.rules.length}/${structuringResult.rules.length} business rules passed`;
@@ -415,8 +438,11 @@ async function runWorkflow() {
     renderSuitability(documentResult.suitabilityStatement);
     renderEPricer(documentResult.ePricerXml);
 
+    document.getElementById("status-approval").textContent = "APPROVED";
+    document.getElementById("status-approval").className = "status-badge approved";
+
     updateGovernanceBadge("badge-schema", true);
-    document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> Output schema validated before write-back';
+    document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> Output schema validated';
 
     emitTopic(
       `sam/v1/response/orchestrator/${sessionId}`,

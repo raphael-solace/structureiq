@@ -4,22 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>StructureIQ | Structured Product Generator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header>
     <div class="header-left">
-      <svg class="solace-logo" viewBox="0 0 200 28" width="200" height="28">
-        <text x="0" y="20" font-family="-apple-system, sans-serif" font-size="16" font-weight="700" fill="#00c895">Solace</text>
-        <text x="58" y="20" font-family="-apple-system, sans-serif" font-size="16" font-weight="300" fill="#e8ecf4">| Agent Mesh</text>
-      </svg>
       <span class="product-name">StructureIQ</span>
+      <span class="product-tagline">Structured Product Generator</span>
     </div>
     <div class="header-right">
       <div id="conn-status" class="conn-indicator disconnected" title="Not configured"></div>
-      <button id="settings-btn" class="settings-btn" title="LLM Settings">&#9881;</button>
-      <span class="env-badge">AIRGAPPED</span>
-      <span class="mesh-badge">Topic-Based Security</span>
+      <button id="settings-btn" class="settings-btn" title="Settings">&#9881;</button>
     </div>
   </header>
 
@@ -28,40 +26,35 @@
       <h2>Client Brief</h2>
       <textarea id="prompt-input" placeholder="Describe the client's structured product need in natural language..."></textarea>
       <div class="example-prompts">
-        <button class="example-btn" data-prompt="Conservative client, €500k, wants capital protection on Euro Stoxx 50, 3 year tenor">Conservative | €500k CPN</button>
+        <button class="example-btn" data-prompt="Conservative client, EUR 500k, wants capital protection on Euro Stoxx 50, 3 year tenor">Conservative | EUR 500k CPN</button>
         <button class="example-btn" data-prompt="Aggressive client, $1M, autocall on single stock basket (NVDA, TSLA, AMZN), 18 months, willing to accept 60% barrier">Aggressive | $1M Autocall</button>
-        <button class="example-btn" data-prompt="Pension fund, £2M, needs yield enhancement on low volatility underlying (FTSE 100), 5 year tenor, institutional grade">Pension Fund | £2M Yield</button>
+        <button class="example-btn" data-prompt="Pension fund, GBP 2M, needs yield enhancement on low volatility underlying (FTSE 100), 5 year tenor, institutional grade">Pension Fund | GBP 2M Yield</button>
       </div>
       <button id="generate-btn" class="generate-btn">
         <span class="btn-icon">&#9654;</span> Generate Structure
       </button>
 
       <div class="discovery-output" id="discovery-output">
+        <div class="product-ref" id="product-ref"></div>
         <h3>Extracted Parameters</h3>
         <div class="params-grid" id="params-grid"></div>
       </div>
     </section>
 
     <section class="panel panel-center">
-      <div class="center-top">
-        <h2>Event Mesh Audit Trail</h2>
-        <div class="airgap-badge">
-          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M8 1a4 4 0 0 0-4 4v3H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9a1 1 0 0 0-1-1h-1V5a4 4 0 0 0-4-4zm-2 4a2 2 0 1 1 4 0v3H6V5z" fill="currentColor"/></svg>
-          Airgapped Namespace
-        </div>
-      </div>
-      <p class="trail-desc">Every agent interaction publishes to a governed Solace topic. ACLs enforce who can publish/subscribe. Full audit via topic replay.</p>
+      <h2>Operations Log</h2>
+      <p class="trail-desc">Chronological record of all agent interactions, delegations, and governance checks.</p>
 
       <div class="topic-trail" id="topic-trail">
         <div class="trail-entry idle">
           <span class="trail-ts">--:--:--</span>
-          <span class="trail-topic">solace/agent-mesh/v1/status</span>
-          <span class="trail-payload">Awaiting request...</span>
+          <span class="trail-topic">Awaiting request...</span>
+          <span class="trail-payload"></span>
         </div>
       </div>
 
       <div class="acl-panel">
-        <h3>Topic ACL Policy (Enforced)</h3>
+        <h3>Agent Permissions</h3>
         <div class="acl-grid">
           <div class="acl-row header">
             <span>Agent</span>
@@ -94,11 +87,19 @@
             <span class="acl-deny">DENY sam/v1/response/structuring/&gt;</span>
           </div>
         </div>
-        <p class="acl-note">Agents cannot cross-communicate outside their ACL scope. Topic isolation = airgapped by design.</p>
       </div>
     </section>
 
     <section class="panel panel-right">
+      <div class="instrument-header" id="instrument-header" style="display:none;">
+        <div class="instrument-ref" id="instrument-ref"></div>
+        <div class="instrument-name" id="instrument-name"></div>
+        <div class="instrument-status">
+          <span class="status-badge" id="status-risk">PENDING</span>
+          <span class="status-badge" id="status-approval">PENDING</span>
+        </div>
+      </div>
+
       <h2>Output Artifacts</h2>
       <div class="output-tabs">
         <button class="tab-btn active" data-tab="termsheet">Term Sheet</button>
@@ -116,26 +117,18 @@
       </div>
 
       <div class="governance-badges" id="governance-badges">
-        <div class="gov-badge" id="badge-airgap"><span class="badge-icon">&#128274;</span> Airgapped namespace. No cross-agent data leakage.</div>
+        <div class="gov-badge" id="badge-airgap"><span class="badge-icon">&#128274;</span> Secure agent isolation</div>
         <div class="gov-badge" id="badge-rules"><span class="badge-icon">&#9744;</span> Business rules pending</div>
         <div class="gov-badge" id="badge-schema"><span class="badge-icon">&#9744;</span> Output schema pending</div>
-        <div class="gov-badge" id="badge-audit"><span class="badge-icon">&#128220;</span> Topic-level replay available for full audit</div>
+        <div class="gov-badge" id="badge-audit"><span class="badge-icon">&#128220;</span> Full session replay available</div>
       </div>
     </section>
   </main>
 
   <footer>
-    <span class="footer-brand">
-      <svg viewBox="0 0 20 20" width="16" height="16" style="vertical-align: middle; margin-right: 6px;">
-        <circle cx="10" cy="10" r="8" fill="none" stroke="#00c895" stroke-width="2"/>
-        <circle cx="10" cy="10" r="3" fill="#00c895"/>
-      </svg>
-      Powered by <strong>Solace Agent Mesh</strong>
-    </span>
+    <span>Powered by Solace</span>
     <span class="footer-sep">|</span>
-    <span>Topic-Based Security | Event-Driven AI Orchestration</span>
-    <span class="footer-sep">|</span>
-    <span class="footer-link">solace.com</span>
+    <span>v1.0</span>
   </footer>
 
   <div id="settings-modal" class="modal hidden">
