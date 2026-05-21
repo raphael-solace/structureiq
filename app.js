@@ -387,6 +387,29 @@ Return JSON with four fields:
 
 Generate realistic values. Use today's date for pricing. ISIN should look real (XS followed by 10 digits). The sales memo should be actionable and ready for a relationship manager to use in their next client meeting.`;
 
+function startSimEvents(events, intervalMs) {
+  let i = 0;
+  const id = setInterval(() => {
+    if (i >= events.length) { clearInterval(id); return; }
+    const e = events[i];
+    emitTopic(e[0], e[1], e[2]);
+    i++;
+  }, intervalMs);
+  return id;
+}
+
+async function callLLMWithEvents(systemPrompt, userMessage, events, intervalMs = 1200) {
+  const simId = startSimEvents(events, intervalMs);
+  try {
+    const result = await callLLM(systemPrompt, userMessage);
+    clearInterval(simId);
+    return result;
+  } catch (err) {
+    clearInterval(simId);
+    throw err;
+  }
+}
+
 async function runWorkflow() {
   const prompt = promptInput.value.trim();
   if (!prompt || isRunning) return;
@@ -411,14 +434,12 @@ async function runWorkflow() {
 
   emitTopic(
     `sam/v1/request/orchestrator/${sessionId}`,
-    `User brief received. Initiating 5-phase structuring workflow.`,
+    `Session ${sessionId} initiated. 3-agent workflow starting.`,
     "pub"
   );
 
   try {
     // === PHASE 1: DISCOVERY ===
-    await delay(300);
-
     emitTopic(
       `sam/v1/request/discovery/${sessionId}`,
       `Orchestrator delegates: extract parameters and market context`,
@@ -427,17 +448,22 @@ async function runWorkflow() {
 
     emitTopic(
       `sam/v1/tool/discovery/nlp_extraction/${sessionId}`,
-      `Tool call: parse_client_brief(text="${prompt.slice(0, 50)}...")`,
+      `Tool call: parse_client_brief(text="${prompt.slice(0, 40)}...")`,
       "tool"
     );
 
-    emitTopic(
-      `sam/v1/tool/discovery/market_data_lookup/${sessionId}`,
-      `Tool call: get_market_context(query=underlying, vol_regime)`,
-      "tool"
-    );
+    const discoveryEvents = [
+      [`sam/v1/tool/discovery/market_data_lookup/${sessionId}`, `Tool call: get_market_context(underlying)`, "tool"],
+      [`sam/v1/tool/discovery/vol_surface/${sessionId}`, `Tool call: fetch_implied_vol_surface(tenor_range)`, "tool"],
+      [`sam/v1/tool/discovery/client_profile/${sessionId}`, `Tool call: classify_regulatory_profile(input)`, "tool"],
+      [`sam/v1/acl/deny/discovery/${sessionId}`, `TOOL DENY: discovery cannot invoke pricing_model`, "deny"],
+      [`sam/v1/acl/deny/discovery/${sessionId}`, `ACL BLOCK: discovery cannot publish to sam/v1/request/document/>`, "deny"],
+      [`sam/v1/heartbeat/discovery/${sessionId}`, `Agent processing... tokens streamed: 847`, "sub"],
+      [`sam/v1/tool/discovery/yield_curve/${sessionId}`, `Tool call: get_risk_free_rate(currency, tenor)`, "tool"],
+      [`sam/v1/acl/deny/discovery/${sessionId}`, `TOOL DENY: discovery cannot invoke risk_calc (structuring only)`, "deny"],
+    ];
 
-    const discoveryResult = await callLLM(DISCOVERY_SYSTEM, prompt);
+    const discoveryResult = await callLLMWithEvents(DISCOVERY_SYSTEM, prompt, discoveryEvents, 900);
 
     emitTopic(
       `sam/v1/response/discovery/${sessionId}`,
@@ -447,24 +473,10 @@ async function runWorkflow() {
 
     renderParams(discoveryResult);
 
-    emitTopic(
-      `sam/v1/acl/deny/discovery/${sessionId}`,
-      `ACL BLOCK: discovery cannot publish to sam/v1/request/document/>`,
-      "deny"
-    );
-
-    emitTopic(
-      `sam/v1/acl/deny/discovery/${sessionId}`,
-      `TOOL DENY: discovery cannot invoke pricing_model (restricted to structuring)`,
-      "deny"
-    );
-
     // === PHASE 2: STRUCTURING + PRICING ===
-    await delay(500);
-
     emitTopic(
       `sam/v1/request/structuring/${sessionId}`,
-      `Orchestrator delegates: product selection, rule validation, and pricing analysis`,
+      `Orchestrator delegates: product selection, rule validation, pricing`,
       "pub"
     );
 
@@ -474,20 +486,21 @@ async function runWorkflow() {
       "tool"
     );
 
-    emitTopic(
-      `sam/v1/tool/structuring/pricing_model/${sessionId}`,
-      `Tool call: run_pricing_model(underlying=${discoveryResult.underlying}, vol=${discoveryResult.volatilityRegime}, tenor=${discoveryResult.tenor})`,
-      "tool"
-    );
-
-    emitTopic(
-      `sam/v1/tool/structuring/risk_calc/${sessionId}`,
-      `Tool call: compute_greeks(delta, vega, gamma) and CVA charge`,
-      "tool"
-    );
+    const structuringEvents = [
+      [`sam/v1/tool/structuring/pricing_model/${sessionId}`, `Tool call: run_monte_carlo(paths=10000, underlying=${discoveryResult.underlying})`, "tool"],
+      [`sam/v1/tool/structuring/risk_calc/${sessionId}`, `Tool call: compute_greeks(delta, vega, gamma, theta)`, "tool"],
+      [`sam/v1/tool/structuring/funding_curve/${sessionId}`, `Tool call: get_funding_spread(issuer_rating=A+, tenor=${discoveryResult.tenor})`, "tool"],
+      [`sam/v1/heartbeat/structuring/${sessionId}`, `Monte Carlo simulation running... 4,200/10,000 paths`, "sub"],
+      [`sam/v1/tool/structuring/cva_engine/${sessionId}`, `Tool call: compute_cva_charge(counterparty=${discoveryResult.regulatoryProfile})`, "tool"],
+      [`sam/v1/tool/structuring/margin_calc/${sessionId}`, `Tool call: calculate_issuer_margin(hedging_cost, funding, distribution)`, "tool"],
+      [`sam/v1/acl/deny/structuring/${sessionId}`, `TOOL DENY: structuring cannot invoke document_gen`, "deny"],
+      [`sam/v1/heartbeat/structuring/${sessionId}`, `Pricing complete. Computing revenue estimate...`, "sub"],
+      [`sam/v1/tool/structuring/revenue_model/${sessionId}`, `Tool call: estimate_revenue(margin, notional=${discoveryResult.notional})`, "tool"],
+      [`sam/v1/acl/deny/structuring/${sessionId}`, `TOOL DENY: structuring cannot access client_data (discovery only)`, "deny"],
+    ];
 
     const structUserMsg = `Client parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nSelect the optimal product structure, validate all 3 business rules, and provide full pricing breakdown including issuer margin, hedging costs, and estimated revenue.`;
-    const structuringResult = await callLLM(STRUCTURING_SYSTEM, structUserMsg);
+    const structuringResult = await callLLMWithEvents(STRUCTURING_SYSTEM, structUserMsg, structuringEvents, 1100);
 
     const allRulesPassed = structuringResult.rules && structuringResult.rules.every((r) => r.passed);
 
@@ -535,50 +548,52 @@ async function runWorkflow() {
     }
 
     // === PHASE 3: DOCUMENT GENERATION ===
-    await delay(500);
+    emitTopic(
+      `sam/v1/acl/deny/document/${sessionId}`,
+      `TOOL DENY: document agent cannot invoke rule_engine (structuring only)`,
+      "deny"
+    );
 
     emitTopic(
       `sam/v1/acl/deny/document/${sessionId}`,
-      `TOOL DENY: document agent cannot invoke rule_engine (restricted to structuring)`,
+      `TOOL DENY: document agent cannot invoke pricing_model`,
       "deny"
     );
 
     emitTopic(
       `sam/v1/request/document/${sessionId}`,
-      `Orchestrator delegates: generate term sheet, suitability, e-pricer XML, and sales memo`,
+      `Orchestrator delegates: generate 4 artifacts (term sheet, suitability, e-pricer, sales memo)`,
       "pub"
     );
 
     emitTopic(
       `sam/v1/tool/document/term_sheet_gen/${sessionId}`,
-      `Tool call: generate_term_sheet(product=${structuringResult.productType}, isin=XS...)`,
+      `Tool call: generate_term_sheet(product=${structuringResult.productType})`,
       "tool"
     );
 
-    emitTopic(
-      `sam/v1/tool/document/suitability_assessment/${sessionId}`,
-      `Tool call: assess_suitability(profile=${discoveryResult.regulatoryProfile}, risk=${discoveryResult.riskProfile})`,
-      "tool"
-    );
-
-    emitTopic(
-      `sam/v1/tool/document/xml_builder/${sessionId}`,
-      `Tool call: build_epricer_payload(product=${structuringResult.productType})`,
-      "tool"
-    );
-
-    emitTopic(
-      `sam/v1/tool/document/sales_memo_gen/${sessionId}`,
-      `Tool call: generate_sales_memo(product=${structuringResult.productType}, revenue=${structuringResult.pricing?.estimatedRevenue || "-"})`,
-      "tool"
-    );
+    const documentEvents = [
+      [`sam/v1/tool/document/isin_generator/${sessionId}`, `Tool call: allocate_isin(prefix=XS, issuer=Solace)`, "tool"],
+      [`sam/v1/tool/document/suitability_assessment/${sessionId}`, `Tool call: assess_suitability(profile=${discoveryResult.regulatoryProfile})`, "tool"],
+      [`sam/v1/tool/document/regulatory_check/${sessionId}`, `Tool call: check_priips_kid_requirement(product_type, client_tier)`, "tool"],
+      [`sam/v1/heartbeat/document/${sessionId}`, `Generating term sheet... 12 fields populated`, "sub"],
+      [`sam/v1/tool/document/xml_builder/${sessionId}`, `Tool call: build_epricer_payload(schema=FpML_5.12)`, "tool"],
+      [`sam/v1/tool/document/sales_memo_gen/${sessionId}`, `Tool call: generate_sales_memo(revenue=${structuringResult.pricing?.estimatedRevenue || "-"})`, "tool"],
+      [`sam/v1/acl/deny/document/${sessionId}`, `ACL BLOCK: document cannot subscribe to sam/v1/tool/structuring/>`, "deny"],
+      [`sam/v1/tool/document/pitch_generator/${sessionId}`, `Tool call: generate_client_pitch(objective=${discoveryResult.clientObjective || "yield"})`, "tool"],
+      [`sam/v1/tool/document/objection_handler/${sessionId}`, `Tool call: load_objection_responses(product=${structuringResult.productType})`, "tool"],
+      [`sam/v1/heartbeat/document/${sessionId}`, `Sales memo drafted. Generating competitive positioning...`, "sub"],
+      [`sam/v1/tool/document/competitive_analysis/${sessionId}`, `Tool call: compare_alternatives(deposits, bonds, equity)`, "tool"],
+      [`sam/v1/tool/document/pdf_render/${sessionId}`, `Tool call: render_pdf_preview(pages=3, format=A4)`, "tool"],
+      [`sam/v1/acl/deny/document/${sessionId}`, `TOOL DENY: document cannot invoke cva_engine (structuring only)`, "deny"],
+    ];
 
     const docUserMsg = `Generate all four document artifacts for this structured product.\n\nDiscovery Parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nStructuring Result (including pricing):\n${JSON.stringify(structuringResult, null, 2)}\n\nProduct Reference: ${refNumber}\n\nGenerate: (1) comprehensive term sheet, (2) detailed suitability statement, (3) e-pricer XML, (4) actionable sales memo for the distribution desk.`;
-    const documentResult = await callLLM(DOCUMENT_SYSTEM, docUserMsg);
+    const documentResult = await callLLMWithEvents(DOCUMENT_SYSTEM, docUserMsg, documentEvents, 1000);
 
     emitTopic(
       `sam/v1/response/document/${sessionId}`,
-      `Artifacts generated: term_sheet, suitability, epricer_xml, sales_memo`,
+      `4 artifacts generated: term_sheet, suitability, epricer_xml, sales_memo`,
       "pub"
     );
 
@@ -594,14 +609,20 @@ async function runWorkflow() {
     document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> 5 artifacts validated and delivered';
 
     emitTopic(
+      `sam/v1/governance/schema_validation/${sessionId}`,
+      `Output schema check: term_sheet (PASS), epricer_xml (PASS), sales_memo (PASS)`,
+      "pub"
+    );
+
+    emitTopic(
       `sam/v1/response/orchestrator/${sessionId}`,
-      `Workflow complete. 5 artifacts delivered: term sheet, pricing, sales memo, suitability, e-pricer.`,
+      `Workflow complete. 5 artifacts delivered. Total events: ${topicTrail.children.length}`,
       "pub"
     );
 
     emitTopic(
       `sam/v1/audit/replay/${sessionId}`,
-      `Full session replay: ${topicTrail.children.length} events | Ref: ${refNumber}`,
+      `Full session replay available | ${topicTrail.children.length} events | Ref: ${refNumber}`,
       "sub"
     );
 
