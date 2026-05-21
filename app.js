@@ -116,7 +116,7 @@ function renderParams(data) {
       item.className = "param-item populating";
       item.innerHTML = `<div class="param-label">${label}</div><div class="param-value">${value || "-"}</div>`;
       paramsGrid.appendChild(item);
-    }, i * 100);
+    }, i * 80);
   });
 }
 
@@ -139,6 +139,62 @@ function renderTermSheet(termSheet) {
     }
   });
   html += "</table>";
+  container.innerHTML = html;
+}
+
+function renderPricing(pricing) {
+  const container = document.getElementById("tab-pricing");
+  if (!pricing) {
+    container.innerHTML = '<div class="placeholder">No pricing data</div>';
+    return;
+  }
+  let html = '<div class="pricing-report">';
+  html += `<div class="pricing-header"><span class="pricing-label">Indicative Price</span><span class="pricing-value">${pricing.indicativePrice || "-"}</span></div>`;
+  html += `<div class="pricing-header"><span class="pricing-label">Issuer Margin</span><span class="pricing-value">${pricing.issuerMargin || "-"}</span></div>`;
+  html += `<div class="pricing-header"><span class="pricing-label">Est. Revenue</span><span class="pricing-value highlight">${pricing.estimatedRevenue || "-"}</span></div>`;
+  html += "<table>";
+  const fields = [
+    ["hedgingCost", "Hedging Cost"],
+    ["fundingSpread", "Funding Spread"],
+    ["creditCharge", "Credit Charge (CVA)"],
+    ["distributionFee", "Distribution Fee"],
+    ["totalCostToClient", "Total Cost to Client"],
+    ["breakEvenLevel", "Break-Even Level"],
+    ["impliedVol", "Implied Volatility"],
+    ["deltaHedge", "Delta Hedge Ratio"],
+    ["vegaExposure", "Vega Exposure"],
+  ];
+  fields.forEach(([key, label]) => {
+    if (pricing[key] !== undefined) {
+      html += `<tr><td>${label}</td><td>${pricing[key]}</td></tr>`;
+    }
+  });
+  html += "</table></div>";
+  container.innerHTML = html;
+}
+
+function renderSalesMemo(memo) {
+  const container = document.getElementById("tab-sales");
+  if (!memo) {
+    container.innerHTML = '<div class="placeholder">No sales memo generated</div>';
+    return;
+  }
+  let html = '<div class="sales-memo">';
+  if (memo.headline) html += `<h4>${memo.headline}</h4>`;
+  if (memo.clientBenefit) html += `<p class="memo-section"><strong>Client Benefit:</strong> ${memo.clientBenefit}</p>`;
+  if (memo.keySellingPoints && memo.keySellingPoints.length) {
+    html += '<p class="memo-section"><strong>Key Selling Points:</strong></p><ul>';
+    memo.keySellingPoints.forEach((p) => { html += `<li>${p}</li>`; });
+    html += "</ul>";
+  }
+  if (memo.objectionHandling && memo.objectionHandling.length) {
+    html += '<p class="memo-section"><strong>Objection Handling:</strong></p><ul>';
+    memo.objectionHandling.forEach((o) => { html += `<li>${o}</li>`; });
+    html += "</ul>";
+  }
+  if (memo.competitivePositioning) html += `<p class="memo-section"><strong>Competitive Positioning:</strong> ${memo.competitivePositioning}</p>`;
+  if (memo.suggestedPitch) html += `<p class="memo-section"><strong>Suggested Pitch:</strong> <em>${memo.suggestedPitch}</em></p>`;
+  html += "</div>";
   container.innerHTML = html;
 }
 
@@ -180,6 +236,8 @@ function resetUI() {
   document.getElementById("status-approval").textContent = "PENDING";
   document.getElementById("status-approval").className = "status-badge";
   document.getElementById("tab-termsheet").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
+  document.getElementById("tab-pricing").innerHTML = '<div class="placeholder">Awaiting pricing analysis...</div>';
+  document.getElementById("tab-sales").innerHTML = '<div class="placeholder">Awaiting sales memo...</div>';
   document.getElementById("tab-suitability").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
   document.getElementById("tab-epricer").innerHTML = '<div class="placeholder">Awaiting document generation...</div>';
   document.getElementById("badge-rules").innerHTML = '<span class="badge-icon">&#9744;</span> Business rules pending';
@@ -208,8 +266,8 @@ async function callLLM(systemPrompt, userMessage) {
         { role: "system", content: systemPrompt },
         { role: "user", content: userMessage },
       ],
-      max_tokens: 2048,
-      temperature: 0.3,
+      max_tokens: 4096,
+      temperature: 0.4,
     }),
   });
 
@@ -230,7 +288,7 @@ async function callLLM(systemPrompt, userMessage) {
   }
 }
 
-const DISCOVERY_SYSTEM = `You are a Discovery Agent specializing in parsing financial client briefs. You extract structured parameters from natural language descriptions of client needs for structured products.
+const DISCOVERY_SYSTEM = `You are a Discovery Agent specializing in parsing financial client briefs for structured products. You extract structured parameters and perform initial market context analysis.
 
 You MUST return ONLY valid JSON with no markdown formatting, no code fences, no explanation. Just the raw JSON object.
 
@@ -243,10 +301,13 @@ Extract these fields:
 - protectionLevel: number 0-100 (percentage of capital protected, infer from context)
 - yieldTarget: string (e.g., "4-6% p.a.", "8-12% p.a.")
 - regulatoryProfile: "retail" | "professional" | "institutional"
+- marketContext: string (1-2 sentences about current market conditions for this underlying)
+- volatilityRegime: "low" | "medium" | "high" (infer from underlying type and market)
+- clientObjective: string (primary goal: "capital preservation" | "yield enhancement" | "leveraged exposure" | "diversification")
 
 Infer values intelligently from context. For conservative clients, default protectionLevel to 90-100. For aggressive, 0-70. For pension funds, regulatoryProfile is "institutional".`;
 
-const STRUCTURING_SYSTEM = `You are a Structuring Agent specializing in structured product selection and compliance validation. You receive discovery parameters and select the optimal product structure.
+const STRUCTURING_SYSTEM = `You are a Structuring Agent specializing in structured product selection, compliance validation, and pricing analysis. You receive discovery parameters, select the optimal product structure, validate business rules, and provide detailed pricing estimates.
 
 You MUST return ONLY valid JSON with no markdown formatting, no code fences, no explanation. Just the raw JSON object.
 
@@ -265,22 +326,40 @@ Return JSON with:
   - name: string (the rule name)
   - passed: boolean
   - reason: string (brief explanation)
+- pricing: object with:
+  - indicativePrice: string (e.g., "98.45%" or "100.20%")
+  - issuerMargin: string (e.g., "1.85%" or "2.30%")
+  - estimatedRevenue: string (the margin applied to notional, e.g., "EUR 9,250" or "$23,000")
+  - hedgingCost: string (e.g., "3.2% of notional")
+  - fundingSpread: string (e.g., "45bps")
+  - creditCharge: string (e.g., "12bps (CVA)")
+  - distributionFee: string (e.g., "0.75%")
+  - totalCostToClient: string (embedded cost percentage)
+  - breakEvenLevel: string (e.g., "97.2% of initial")
+  - impliedVol: string (e.g., "22.4%")
+  - deltaHedge: string (e.g., "-0.45")
+  - vegaExposure: string (e.g., "EUR 1,200 per 1vol")
 
 The 3 business rules to validate:
 1. "Minimum Protection Threshold": For conservative profiles, protectionLevel must be >= 80%. For moderate >= 50%. Always passes for aggressive.
 2. "Notional Tier Limit": Retail <= 1M, Professional <= 10M, Institutional <= 50M.
 3. "Product Suitability": Autocalls and Reverse Convertibles are NOT approved for conservative retail clients. Capital Protected Notes are approved for all profiles.
 
-If a rule fails, set passed: false and explain why. The structuring STILL returns a product suggestion but marks the failing rules clearly.`;
+If a rule fails, set passed: false and explain why. The structuring STILL returns a product suggestion but marks the failing rules clearly.
 
-const DOCUMENT_SYSTEM = `You are a Document Agent specializing in financial document generation for structured products. You generate term sheets, suitability summaries, and e-pricer payloads.
+For pricing, generate realistic values based on current market conditions. Higher vol = higher option premiums = better coupons. Revenue should be the issuer margin applied to the notional amount.`;
+
+const DOCUMENT_SYSTEM = `You are a Document Agent specializing in comprehensive financial document generation for structured products. You generate term sheets, suitability assessments, e-pricer payloads, and detailed sales memos for the distribution team.
 
 You MUST return ONLY valid JSON with no markdown formatting, no code fences, no explanation. Just the raw JSON object.
 
-Return JSON with three fields:
-- termSheet: object with keys: productName, issuer, isin, underlying, tenor, notional, currency, protectionLevel, coupon, barrier, strikeDate, maturityDate, settlementType, dayCount, businessDays
-- suitabilityStatement: string (2-3 professional sentences explaining why this product suits the client's profile and objectives)
-- ePricerXml: string containing valid XML with structure:
+Return JSON with four fields:
+
+1. termSheet: object with keys: productName, issuer, isin, underlying, tenor, notional, currency, protectionLevel, coupon, barrier, strikeDate, maturityDate, settlementType, dayCount, businessDays, autocallFrequency (if applicable), memoryFeature (if applicable), earlyRedemption (if applicable)
+
+2. suitabilityStatement: string (3-4 professional sentences explaining why this product suits the client's profile, risk tolerance, and investment objectives. Reference specific regulatory requirements met.)
+
+3. ePricerXml: string containing valid XML with structure:
   <StructuredNote>
     <ISIN>XS + 10 random digits</ISIN>
     <Issuer>Solace Capital Markets</Issuer>
@@ -298,7 +377,15 @@ Return JSON with three fields:
     <MaturityDate>calculated from tenor</MaturityDate>
   </StructuredNote>
 
-Generate realistic values. Use today's date for pricing. ISIN should look real (XS followed by 10 digits).`;
+4. salesMemo: object with:
+  - headline: string (punchy 1-line product summary for sales desk, e.g., "3Y Euro Stoxx 50 CPN | 95% Protection | 4.8% p.a.")
+  - clientBenefit: string (2-3 sentences on why this product is compelling for the client right now given market conditions)
+  - keySellingPoints: array of 3-4 strings (concise bullet points for the sales pitch)
+  - objectionHandling: array of 2-3 strings (common client objections and suggested responses)
+  - competitivePositioning: string (how this compares to alternatives: deposits, bonds, direct equity)
+  - suggestedPitch: string (2-3 sentence elevator pitch the salesperson can use verbatim with the client)
+
+Generate realistic values. Use today's date for pricing. ISIN should look real (XS followed by 10 digits). The sales memo should be actionable and ready for a relationship manager to use in their next client meeting.`;
 
 async function runWorkflow() {
   const prompt = promptInput.value.trim();
@@ -324,16 +411,17 @@ async function runWorkflow() {
 
   emitTopic(
     `sam/v1/request/orchestrator/${sessionId}`,
-    `User brief received. Routing to discovery agent.`,
+    `User brief received. Initiating 5-phase structuring workflow.`,
     "pub"
   );
 
   try {
+    // === PHASE 1: DISCOVERY ===
     await delay(300);
 
     emitTopic(
       `sam/v1/request/discovery/${sessionId}`,
-      `Orchestrator delegates: extract parameters from client brief`,
+      `Orchestrator delegates: extract parameters and market context`,
       "pub"
     );
 
@@ -343,11 +431,17 @@ async function runWorkflow() {
       "tool"
     );
 
+    emitTopic(
+      `sam/v1/tool/discovery/market_data_lookup/${sessionId}`,
+      `Tool call: get_market_context(query=underlying, vol_regime)`,
+      "tool"
+    );
+
     const discoveryResult = await callLLM(DISCOVERY_SYSTEM, prompt);
 
     emitTopic(
       `sam/v1/response/discovery/${sessionId}`,
-      `Parameters extracted: ${discoveryResult.underlying}, ${discoveryResult.tenor}, ${discoveryResult.riskProfile}`,
+      `Parameters extracted: ${discoveryResult.underlying}, ${discoveryResult.tenor}, ${discoveryResult.riskProfile}, vol=${discoveryResult.volatilityRegime}`,
       "pub"
     );
 
@@ -361,15 +455,16 @@ async function runWorkflow() {
 
     emitTopic(
       `sam/v1/acl/deny/discovery/${sessionId}`,
-      `TOOL DENY: discovery cannot invoke pricing_model (restricted to structuring agent)`,
+      `TOOL DENY: discovery cannot invoke pricing_model (restricted to structuring)`,
       "deny"
     );
 
-    await delay(400);
+    // === PHASE 2: STRUCTURING + PRICING ===
+    await delay(500);
 
     emitTopic(
       `sam/v1/request/structuring/${sessionId}`,
-      `Orchestrator delegates: select product and validate business rules`,
+      `Orchestrator delegates: product selection, rule validation, and pricing analysis`,
       "pub"
     );
 
@@ -379,14 +474,26 @@ async function runWorkflow() {
       "tool"
     );
 
-    const structUserMsg = `Client parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nSelect the optimal product structure and validate all 3 business rules.`;
+    emitTopic(
+      `sam/v1/tool/structuring/pricing_model/${sessionId}`,
+      `Tool call: run_pricing_model(underlying=${discoveryResult.underlying}, vol=${discoveryResult.volatilityRegime}, tenor=${discoveryResult.tenor})`,
+      "tool"
+    );
+
+    emitTopic(
+      `sam/v1/tool/structuring/risk_calc/${sessionId}`,
+      `Tool call: compute_greeks(delta, vega, gamma) and CVA charge`,
+      "tool"
+    );
+
+    const structUserMsg = `Client parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nSelect the optimal product structure, validate all 3 business rules, and provide full pricing breakdown including issuer margin, hedging costs, and estimated revenue.`;
     const structuringResult = await callLLM(STRUCTURING_SYSTEM, structUserMsg);
 
     const allRulesPassed = structuringResult.rules && structuringResult.rules.every((r) => r.passed);
 
     emitTopic(
       `sam/v1/response/structuring/${sessionId}`,
-      `Product: ${structuringResult.productType} | Rules: ${allRulesPassed ? "ALL PASSED" : "VIOLATIONS DETECTED"}`,
+      `Product: ${structuringResult.productType} | Price: ${structuringResult.pricing?.indicativePrice || "-"} | Revenue: ${structuringResult.pricing?.estimatedRevenue || "-"}`,
       "pub"
     );
 
@@ -411,6 +518,8 @@ async function runWorkflow() {
       document.getElementById("badge-rules").innerHTML = `<span class="badge-icon">❌</span> ${structuringResult.rules.filter((r) => r.passed).length}/${structuringResult.rules.length} business rules passed`;
     }
 
+    renderPricing(structuringResult.pricing);
+
     emitTopic(
       `sam/v1/acl/check/client_tier/${sessionId}`,
       `Client tier: ${discoveryResult.regulatoryProfile} | Product: ${structuringResult.productType} | ACCESS GRANTED`,
@@ -425,60 +534,74 @@ async function runWorkflow() {
       );
     }
 
+    // === PHASE 3: DOCUMENT GENERATION ===
+    await delay(500);
+
     emitTopic(
       `sam/v1/acl/deny/document/${sessionId}`,
       `TOOL DENY: document agent cannot invoke rule_engine (restricted to structuring)`,
       "deny"
     );
 
-    await delay(400);
-
     emitTopic(
       `sam/v1/request/document/${sessionId}`,
-      `Orchestrator delegates: generate term sheet, suitability, e-pricer XML`,
+      `Orchestrator delegates: generate term sheet, suitability, e-pricer XML, and sales memo`,
       "pub"
     );
 
     emitTopic(
       `sam/v1/tool/document/term_sheet_gen/${sessionId}`,
-      `Tool call: generate_term_sheet(product=${structuringResult.productType})`,
+      `Tool call: generate_term_sheet(product=${structuringResult.productType}, isin=XS...)`,
+      "tool"
+    );
+
+    emitTopic(
+      `sam/v1/tool/document/suitability_assessment/${sessionId}`,
+      `Tool call: assess_suitability(profile=${discoveryResult.regulatoryProfile}, risk=${discoveryResult.riskProfile})`,
       "tool"
     );
 
     emitTopic(
       `sam/v1/tool/document/xml_builder/${sessionId}`,
-      `Tool call: build_epricer_payload(isin=XS...)`,
+      `Tool call: build_epricer_payload(product=${structuringResult.productType})`,
       "tool"
     );
 
-    const docUserMsg = `Generate all three document artifacts for this validated structured product.\n\nDiscovery Parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nStructuring Result:\n${JSON.stringify(structuringResult, null, 2)}`;
+    emitTopic(
+      `sam/v1/tool/document/sales_memo_gen/${sessionId}`,
+      `Tool call: generate_sales_memo(product=${structuringResult.productType}, revenue=${structuringResult.pricing?.estimatedRevenue || "-"})`,
+      "tool"
+    );
+
+    const docUserMsg = `Generate all four document artifacts for this structured product.\n\nDiscovery Parameters:\n${JSON.stringify(discoveryResult, null, 2)}\n\nStructuring Result (including pricing):\n${JSON.stringify(structuringResult, null, 2)}\n\nProduct Reference: ${refNumber}\n\nGenerate: (1) comprehensive term sheet, (2) detailed suitability statement, (3) e-pricer XML, (4) actionable sales memo for the distribution desk.`;
     const documentResult = await callLLM(DOCUMENT_SYSTEM, docUserMsg);
 
     emitTopic(
       `sam/v1/response/document/${sessionId}`,
-      `Artifacts generated: term_sheet, suitability_statement, epricer_xml`,
+      `Artifacts generated: term_sheet, suitability, epricer_xml, sales_memo`,
       "pub"
     );
 
     renderTermSheet(documentResult.termSheet);
     renderSuitability(documentResult.suitabilityStatement);
     renderEPricer(documentResult.ePricerXml);
+    renderSalesMemo(documentResult.salesMemo);
 
     document.getElementById("status-approval").textContent = "APPROVED";
     document.getElementById("status-approval").className = "status-badge approved";
 
     updateGovernanceBadge("badge-schema", true);
-    document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> Output schema validated';
+    document.getElementById("badge-schema").innerHTML = '<span class="badge-icon">✅</span> 5 artifacts validated and delivered';
 
     emitTopic(
       `sam/v1/response/orchestrator/${sessionId}`,
-      `Workflow complete. 3 artifacts delivered to client namespace.`,
+      `Workflow complete. 5 artifacts delivered: term sheet, pricing, sales memo, suitability, e-pricer.`,
       "pub"
     );
 
     emitTopic(
       `sam/v1/audit/replay/${sessionId}`,
-      `Full topic replay available for session ${sessionId} (${topicTrail.children.length} events)`,
+      `Full session replay: ${topicTrail.children.length} events | Ref: ${refNumber}`,
       "sub"
     );
 

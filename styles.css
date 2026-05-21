@@ -477,6 +477,62 @@ main {
   word-break: break-all;
 }
 
+/* Pricing Report */
+.pricing-report {}
+.pricing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 2px;
+}
+.pricing-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+.pricing-value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.pricing-value.highlight {
+  color: var(--accent);
+  font-size: 14px;
+}
+.pricing-report table { margin-top: 10px; }
+
+/* Sales Memo */
+.sales-memo {}
+.sales-memo h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.memo-section {
+  margin-bottom: 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.memo-section strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.sales-memo ul {
+  margin: 6px 0 10px 16px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+.sales-memo li { margin-bottom: 4px; }
+.sales-memo em { color: var(--accent); font-style: normal; }
+
 .governance-badges {
   margin-top: 16px;
   display: flex;
