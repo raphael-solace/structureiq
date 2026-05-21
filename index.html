@@ -54,7 +54,7 @@
       </div>
 
       <div class="acl-panel">
-        <h3>Agent Permissions</h3>
+        <h3>Agent Topic Permissions</h3>
         <div class="acl-grid">
           <div class="acl-row header">
             <span>Agent</span>
@@ -85,6 +85,73 @@
             <span class="acl-agent">Discovery</span>
             <span class="acl-deny">DENY sam/v1/request/document/&gt;</span>
             <span class="acl-deny">DENY sam/v1/response/structuring/&gt;</span>
+          </div>
+          <div class="acl-row denied">
+            <span class="acl-agent">Document</span>
+            <span class="acl-deny">DENY sam/v1/request/structuring/&gt;</span>
+            <span class="acl-deny">DENY sam/v1/tool/structuring/&gt;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="acl-panel">
+        <h3>Tool Access by Agent</h3>
+        <div class="acl-grid">
+          <div class="acl-row header">
+            <span>Agent</span>
+            <span>Allowed Tools</span>
+            <span>Denied Tools</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Discovery</span>
+            <span class="acl-topic">nlp_extraction, market_data_lookup</span>
+            <span class="acl-deny">rule_engine, pricing_model</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Structuring</span>
+            <span class="acl-topic">rule_engine, pricing_model, risk_calc</span>
+            <span class="acl-deny">document_gen, client_data</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Document</span>
+            <span class="acl-topic">term_sheet_gen, xml_builder, pdf_render</span>
+            <span class="acl-deny">pricing_model, rule_engine</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="acl-panel">
+        <h3>Client Tier Restrictions</h3>
+        <div class="acl-grid">
+          <div class="acl-row header">
+            <span>Client Tier</span>
+            <span>Allowed Products</span>
+            <span>Blocked</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Retail</span>
+            <span class="acl-topic">Capital Protected Note</span>
+            <span class="acl-deny">Autocall, Reverse Convertible</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Professional</span>
+            <span class="acl-topic">CPN, Barrier Note, Autocall</span>
+            <span class="acl-deny">Exotic (notional &gt; 10M)</span>
+          </div>
+          <div class="acl-row">
+            <span class="acl-agent">Institutional</span>
+            <span class="acl-topic">All product types</span>
+            <span class="acl-topic">No restrictions</span>
+          </div>
+          <div class="acl-row denied">
+            <span class="acl-agent">Retail</span>
+            <span class="acl-deny">DENY sam/v1/tool/*/pricing_model</span>
+            <span class="acl-deny">DENY sam/v1/tool/*/exotic_payoff</span>
+          </div>
+          <div class="acl-row denied">
+            <span class="acl-agent">Professional</span>
+            <span class="acl-deny">DENY sam/v1/tool/*/exotic_payoff</span>
+            <span class="acl-deny">DENY notional &gt; 10M flows</span>
           </div>
         </div>
       </div>

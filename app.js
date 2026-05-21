@@ -359,6 +359,12 @@ async function runWorkflow() {
       "deny"
     );
 
+    emitTopic(
+      `sam/v1/acl/deny/discovery/${sessionId}`,
+      `TOOL DENY: discovery cannot invoke pricing_model (restricted to structuring agent)`,
+      "deny"
+    );
+
     await delay(400);
 
     emitTopic(
@@ -404,6 +410,26 @@ async function runWorkflow() {
       updateGovernanceBadge("badge-rules", false);
       document.getElementById("badge-rules").innerHTML = `<span class="badge-icon">❌</span> ${structuringResult.rules.filter((r) => r.passed).length}/${structuringResult.rules.length} business rules passed`;
     }
+
+    emitTopic(
+      `sam/v1/acl/check/client_tier/${sessionId}`,
+      `Client tier: ${discoveryResult.regulatoryProfile} | Product: ${structuringResult.productType} | ACCESS GRANTED`,
+      "pub"
+    );
+
+    if (discoveryResult.regulatoryProfile === "retail") {
+      emitTopic(
+        `sam/v1/acl/deny/client_tier/${sessionId}`,
+        `TIER BLOCK: retail clients denied access to sam/v1/tool/*/exotic_payoff`,
+        "deny"
+      );
+    }
+
+    emitTopic(
+      `sam/v1/acl/deny/document/${sessionId}`,
+      `TOOL DENY: document agent cannot invoke rule_engine (restricted to structuring)`,
+      "deny"
+    );
 
     await delay(400);
 
